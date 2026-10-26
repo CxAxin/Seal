@@ -1,0 +1,57 @@
+name: Build Seal APK
+
+# Builds Seal with a bundled QuickJS JavaScript runtime so that yt-dlp can
+# solve YouTube's EJS challenges again.
+#
+# The QuickJS binary is cross-compiled here for every ABI Seal ships, because
+# the repository intentionally does not commit prebuilt binaries.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install CMake and NDK
+        run: |
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          sdkmanager --install "cmake;3.22.1" "ndk;27.0.12077973"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Show NDK location
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls -1 "$ANDROID_HOME/ndk" || true
+
+      - name: Build QuickJS for Android
+        run: bash scripts/build-quickjs.sh
+
+      - name: Build debug APK
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleGenericDebug
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: seal-debug-apk
+          path: app/build/outputs/apk/generic/debug/*.apk
+          if-no-files-found: error
