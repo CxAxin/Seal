@@ -33,14 +33,30 @@ JNI_DIR="$PROJECT_DIR/app/src/main/jniLibs"
 WORK_DIR="$PROJECT_DIR/.quickjs-build"
 
 # --- locate the NDK -----------------------------------------------------------
-if [ -z "${ANDROID_NDK_HOME:-}" ]; then
-  for candidate in "${ANDROID_HOME:-}/ndk" "${ANDROID_SDK_ROOT:-}/ndk" \
-                   "${ANDROID_HOME:-}/ndk-bundle" "${ANDROID_SDK_ROOT:-}/ndk-bundle"; do
-    if [ -d "$candidate" ]; then
-      ANDROID_NDK_HOME="$(ls -d "$candidate"/*/ "$candidate" 2>/dev/null | grep -E 'ndk' | tail -1)"
-      break
+# A directory only counts as an NDK if it actually carries the CMake toolchain;
+# $ANDROID_HOME/ndk itself does not (it merely contains versioned subdirectories).
+find_ndk() {
+  for base in "$@"; do
+    [ -n "$base" ] && [ -d "$base" ] || continue
+    if [ -f "$base/build/cmake/android.toolchain.cmake" ]; then
+      echo "$base"
+      return 0
     fi
+    for sub in "$base"/*/; do
+      [ -d "$sub" ] || continue
+      if [ -f "${sub}build/cmake/android.toolchain.cmake" ]; then
+        echo "${sub%/}"
+        return 0
+      fi
+    done
   done
+  return 1
+}
+
+if [ -z "${ANDROID_NDK_HOME:-}" ]; then
+  ANDROID_NDK_HOME="$(find_ndk \
+    "${ANDROID_HOME:-}/ndk" "${ANDROID_SDK_ROOT:-}/ndk" \
+    "${ANDROID_HOME:-}/ndk-bundle" "${ANDROID_SDK_ROOT:-}/ndk-bundle")"
 fi
 
 if [ -z "${ANDROID_NDK_HOME:-}" ] || [ ! -d "${ANDROID_NDK_HOME}" ]; then
