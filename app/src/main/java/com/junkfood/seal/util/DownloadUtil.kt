@@ -29,6 +29,7 @@ import com.junkfood.seal.util.FileUtil.getExternalTempDir
 import com.junkfood.seal.util.FileUtil.getFileName
 import com.junkfood.seal.util.FileUtil.getSdcardTempDir
 import com.junkfood.seal.util.FileUtil.moveFilesToSdcard
+import com.junkfood.seal.util.JsRuntime.enableJsRuntime
 import com.junkfood.seal.util.PreferenceUtil.COOKIE_HEADER
 import com.junkfood.seal.util.PreferenceUtil.getBoolean
 import com.junkfood.seal.util.PreferenceUtil.getInt
