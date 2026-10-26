@@ -56,6 +56,8 @@ jobs:
       - name: Build debug APK
         run: |
           chmod +x gradlew
+          # Safety net: a CRLF gradlew fails with "/usr/bin/env: 'sh\r'".
+          sed -i 's/\r$//' gradlew
           ./gradlew --no-daemon assembleGenericDebug
 
       - name: Upload debug APK
