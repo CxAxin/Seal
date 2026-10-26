@@ -25,21 +25,30 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install CMake and NDK
+      # The runner image already ships ANDROID_HOME with cmdline-tools, so no
+      # setup action is needed here - only install the components Seal needs.
+      - name: Prepare Android SDK (NDK + CMake)
         run: |
-          yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          sdkmanager --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
-          sdkmanager --install "cmake;3.22.1" "ndk;27.0.12077973"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Show NDK location
-        run: |
+          set -e
           echo "ANDROID_HOME=$ANDROID_HOME"
+          if command -v sdkmanager >/dev/null 2>&1; then
+            SDKMANAGER=sdkmanager
+          else
+            SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          fi
+          echo "sdkmanager: $SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+          "$SDKMANAGER" --install "platforms;android-35" "build-tools;35.0.0"
+          if [ -z "$(ls -A "$ANDROID_HOME/ndk" 2>/dev/null)" ]; then
+            "$SDKMANAGER" --install "ndk;27.0.12077973"
+          fi
+          if [ ! -d "$ANDROID_HOME/cmake/3.22.1" ]; then
+            "$SDKMANAGER" --install "cmake;3.22.1"
+          fi
+          echo "--- NDK versions ---"
           ls -1 "$ANDROID_HOME/ndk" || true
+          echo "--- CMake versions ---"
+          ls -1 "$ANDROID_HOME/cmake" || true
 
       - name: Build QuickJS for Android
         run: bash scripts/build-quickjs.sh
