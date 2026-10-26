@@ -1,3 +1,5 @@
 # Shell scripts must keep LF endings: with CRLF, Linux CI fails with
-# "/usr/bin/env: 'bash\r': No such file or directory".
+# "/usr/bin/env: 'bash\r': No such file or directory" (and 'sh\r' for gradlew).
+# gradlew has no extension, so it needs an explicit rule.
 *.sh text eol=lf
+gradlew text eol=lf
