@@ -48,8 +48,16 @@ object JsRuntime {
     private fun supportsJsRuntimes(): Boolean {
         // yt-dlp nightly reports e.g. 2026.08.30.232658, stable reports 2025.11.12
         val version = YT_DLP_VERSION.getString()
-        if (version.isBlank()) return true // unknown: let yt-dlp decide
-        val value = version.filter(Char::isDigit).take(8).toLongOrNull() ?: return true
+        if (version.isBlank()) {
+            // The build ships yt-dlp 2024.09.27, which rejects `--js-runtimes` outright.
+            // A blank preference means the in-app updater has not reported a version yet,
+            // so assume the old bundled build and stay out of the way: injecting here
+            // would break *every* download, not just YouTube, with an "unrecognized
+            // argument" error.
+            Log.w(TAG, "yt-dlp version unknown; skipping --js-runtimes")
+            return false
+        }
+        val value = version.filter(Char::isDigit).take(8).toLongOrNull() ?: return false
         return value >= MIN_EJS_VERSION
     }
 
