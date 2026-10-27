@@ -103,6 +103,9 @@ jobs:
           chmod +x gradlew
           # Safety net: a CRLF gradlew fails with "/usr/bin/env: 'sh\r'".
           sed -i 's/\r$//' gradlew
+          # Every build otherwise reports the same version, so a device cannot
+          # tell them apart and bug reports are impossible to attribute.
+          sed -i 's|versionNameSuffix = "-debug"|versionNameSuffix = "-debug-b${{ github.run_number }}"|' app/build.gradle.kts
           ./gradlew --no-daemon assembleGenericDebug
 
       - name: Upload debug APK
