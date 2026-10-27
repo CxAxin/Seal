@@ -91,7 +91,7 @@ object DownloadUtil {
     ): Result<YoutubeDLInfo> =
         YoutubeDL.runCatching {
             ToastUtil.makeToastSuspend(context.getString(R.string.fetching_playlist_info))
-            val request = YoutubeDLRequest(playlistURL)
+            val request = YoutubeDLRequest(ShortLinkResolver.resolve(playlistURL))
             with(request) {
                 //            addOption("--compat-options", "no-youtube-unavailable-videos")
                 addOption("--flat-playlist")
