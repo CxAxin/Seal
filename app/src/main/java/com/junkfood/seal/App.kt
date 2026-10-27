@@ -23,6 +23,7 @@ import com.junkfood.seal.ui.page.settings.directory.Directory
 import com.junkfood.seal.ui.page.settings.network.CookiesViewModel
 import com.junkfood.seal.ui.page.videolist.VideoListViewModel
 import com.junkfood.seal.util.AUDIO_DIRECTORY
+import com.junkfood.seal.util.BundledYtDlp
 import com.junkfood.seal.util.COMMAND_DIRECTORY
 import com.junkfood.seal.util.DownloadUtil
 import com.junkfood.seal.util.FileUtil
@@ -89,6 +90,9 @@ class App : Application() {
         applicationScope.launch((Dispatchers.IO)) {
             try {
                 YoutubeDL.init(this@App)
+                // Replace the library's 2024 yt-dlp with the one bundled in this APK when it is
+                // older, so EJS works without needing a network update first.
+                BundledYtDlp.applyIfNewer()
                 FFmpeg.init(this@App)
                 Aria2c.init(this@App)
                 DownloadUtil.getCookiesContentFromDatabase().getOrNull()?.let {
