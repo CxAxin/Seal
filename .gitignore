@@ -20,3 +20,7 @@ local.properties
 # QuickJS: cross-compiled per ABI by scripts/build-quickjs.sh, never committed
 /.quickjs-build/
 /app/src/main/jniLibs/*/libqjs.so
+
+# yt-dlp: downloaded by CI right before the Gradle build, never committed
+/app/src/main/assets/ytdlp
+/app/src/main/assets/ytdlp.version
