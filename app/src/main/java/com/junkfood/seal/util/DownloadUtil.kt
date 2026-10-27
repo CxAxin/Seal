@@ -147,7 +147,7 @@ object DownloadUtil {
     ): Result<VideoInfo> {
         with(preferences) {
             val request =
-                YoutubeDLRequest(url).apply {
+                YoutubeDLRequest(ShortLinkResolver.resolve(url)).apply {
                     addOption("-o", BASENAME)
                     if (restrictFilenames) {
                         addOption("--restrict-filenames")
@@ -679,7 +679,7 @@ object DownloadUtil {
                             Throwable(context.getString(R.string.fetch_info_error_msg))
                         )
                 }
-            val request = YoutubeDLRequest(url)
+            val request = YoutubeDLRequest(ShortLinkResolver.resolve(url))
             val pathBuilder = StringBuilder()
             val outputBuilder = StringBuilder()
 
