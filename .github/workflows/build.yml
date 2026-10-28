@@ -24,6 +24,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Gradle mints a fresh debug key on any machine that does not have one, so
+      # without a committed keystore every run signed differently and the new APK
+      # could only be installed after uninstalling the previous one. The key is
+      # created once and committed back so all later runs share it.
+      - name: Ensure stable debug keystore
+        run: |
+          set -e
+          if [ ! -f debug.keystore ]; then
+            keytool -genkeypair -v \
+              -keystore debug.keystore -storetype PKCS12 \
+              -storepass android -keypass android \
+              -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10950 \
+              -dname "CN=Seal Debug, OU=Seal, O=Seal, L=Unknown, ST=Unknown, C=US"
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add debug.keystore
+            git commit -m "Add a fixed debug keystore so builds share one signature [skip ci]"
+            git push
+            echo "created and committed a new debug keystore"
+          fi
+          keytool -list -v -keystore debug.keystore -storepass android \
+            | grep -E "Alias name|SHA1" | head -2
+
       # The upstream library bundles yt-dlp 2024.09.27, which has no --js-runtimes
       # support, so a modern build is fetched here and shipped as an asset.
       - name: Fetch latest stable yt-dlp
