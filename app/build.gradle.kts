@@ -41,6 +41,24 @@ android {
         }
     }
 
+    // Gradle generates a throwaway debug key on each machine that lacks one, so
+    // every CI run used to sign with a different key and the new APK could only
+    // be installed after uninstalling the previous build. A committed debug
+    // keystore keeps the signature stable. Debug keys carry no trust, so
+    // committing this one is safe.
+    val stableDebugKeystore: File = rootProject.file("debug.keystore")
+
+    if (stableDebugKeystore.exists()) {
+        signingConfigs {
+            create("stableDebug") {
+                storeFile = stableDebugKeystore
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        }
+    }
+
     buildFeatures { buildConfig = true }
 
     defaultConfig {
@@ -107,6 +125,8 @@ android {
         debug {
             if (keystorePropertiesFile.exists()) {
                 signingConfig = signingConfigs.getByName("githubPublish")
+            } else if (stableDebugKeystore.exists()) {
+                signingConfig = signingConfigs.getByName("stableDebug")
             }
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
