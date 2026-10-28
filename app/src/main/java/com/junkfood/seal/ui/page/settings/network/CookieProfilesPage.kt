@@ -90,6 +90,7 @@ import com.junkfood.seal.ui.theme.SealTheme
 import com.junkfood.seal.ui.theme.generateLabelColor
 import com.junkfood.seal.util.COOKIES
 import com.junkfood.seal.util.DownloadUtil
+import com.junkfood.seal.util.normalizeCookieFileContent
 import com.junkfood.seal.util.DownloadUtil.toCookiesFileContent
 import com.junkfood.seal.util.FileUtil
 import com.junkfood.seal.util.FileUtil.getCookiesFile
@@ -165,7 +166,7 @@ fun CookieProfilePage(
                     runCatching {
                         context.contentResolver.openInputStream(source)?.use { input ->
                             FileUtil.writeContentToFile(
-                                input.readBytes().decodeToString(),
+                                normalizeCookieFileContent(input.readBytes().decodeToString()),
                                 context.getImportedCookiesFile(),
                             )
                             COOKIES.updateBoolean(true)
