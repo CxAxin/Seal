@@ -24,3 +24,6 @@ local.properties
 # yt-dlp: downloaded by CI right before the Gradle build, never committed
 /app/src/main/assets/ytdlp
 /app/src/main/assets/ytdlp.version
+
+# debug.keystore is committed on purpose: it keeps the debug signature stable
+# across CI runs so new builds install over old ones. Never put a release key here.
