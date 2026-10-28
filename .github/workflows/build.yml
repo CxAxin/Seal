@@ -24,29 +24,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Gradle mints a fresh debug key on any machine that does not have one, so
-      # without a committed keystore every run signed differently and the new APK
-      # could only be installed after uninstalling the previous one. The key is
-      # created once and committed back so all later runs share it.
-      - name: Ensure stable debug keystore
-        run: |
-          set -e
-          if [ ! -f debug.keystore ]; then
-            keytool -genkeypair -v \
-              -keystore debug.keystore -storetype PKCS12 \
-              -storepass android -keypass android \
-              -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10950 \
-              -dname "CN=Seal Debug, OU=Seal, O=Seal, L=Unknown, ST=Unknown, C=US"
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add debug.keystore
-            git commit -m "Add a fixed debug keystore so builds share one signature [skip ci]"
-            git push
-            echo "created and committed a new debug keystore"
-          fi
-          keytool -list -v -keystore debug.keystore -storepass android \
-            | grep -E "Alias name|SHA1" | head -2
-
       # The upstream library bundles yt-dlp 2024.09.27, which has no --js-runtimes
       # support, so a modern build is fetched here and shipped as an asset.
       - name: Fetch latest stable yt-dlp
@@ -92,6 +69,32 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+
+      # Gradle mints a throwaway debug key on any machine that does not have one,
+      # so without a committed keystore every run signed differently and a new APK
+      # could only be installed after uninstalling the previous one. The keystore
+      # is committed to the repository; when it is missing a key is generated here
+      # and published as an artifact so it can be committed afterwards.
+      - name: Ensure debug keystore
+        run: |
+          set -e
+          if [ ! -f debug.keystore ]; then
+            keytool -genkeypair -v \
+              -keystore debug.keystore -storetype PKCS12 \
+              -storepass android -keypass android \
+              -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10950 \
+              -dname "CN=Seal Debug, OU=Seal, O=Seal, L=Unknown, ST=Unknown, C=US"
+            echo "generated a debug keystore that still needs to be committed"
+          fi
+          keytool -list -v -keystore debug.keystore -storepass android \
+            | grep -E "Alias name|SHA1" | head -2
+
+      - name: Upload debug keystore
+        uses: actions/upload-artifact@v4
+        with:
+          name: seal-debug-keystore
+          path: debug.keystore
+          if-no-files-found: error
 
       # The runner image already ships ANDROID_HOME with cmdline-tools, so no
       # setup action is needed here - only install the components Seal needs.
