@@ -336,6 +336,7 @@
     <string name="refresh_cookies_desc">点击打开网页以刷新 cookies：</string>
     <string name="ua_header">用户代理</string>
     <string name="export_to_file">导出到文件</string>
+    <string name="import_from_file">从文件导入</string>
     <string name="custom_command_usage_msg">yt-dlp 是一款强大的命令行视频下载工具。通过提供直观的图形用户界面（GUI）、 常见命令行的预设以及其他附加功能，Seal 使该工具更易使用。
 \n
 \n对于 yt-dlp 的高级用法，Seal 允许你直接创建、保存并执行自定义的命令行模板，就像在命令行终端上操作一样。
