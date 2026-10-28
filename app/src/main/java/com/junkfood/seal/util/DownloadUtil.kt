@@ -81,6 +81,16 @@ object DownloadUtil {
 
     private const val PLAYLIST_TITLE_SUBDIRECTORY_PREFIX = "%(playlist)s/"
 
+    /**
+     * Without cookies yt-dlp only requests the `visionos` and `web` player clients, and `web`
+     * requires a GVS PO token that cannot be minted on Android. When both are rejected YouTube
+     * answers "Sign in to confirm you're not a bot" and the whole download dies.
+     *
+     * These extra clients need no PO token, so they act as a fallback and also expose more
+     * formats. `default` keeps yt-dlp's own choice first (it is tried in reverse order).
+     */
+    private const val YOUTUBE_PLAYER_CLIENT_ARG = "player_client=default,tv_downgraded,web_embedded"
+
     private const val CROP_ARTWORK_COMMAND =
         """--ppa "ffmpeg: -c:v mjpeg -vf crop=\"'if(gt(ih,iw),iw,ih)':'if(gt(iw,ih),ih,iw)'\"""""
 
@@ -170,10 +180,11 @@ object DownloadUtil {
                     }*/
                     if (autoSubtitle) {
                         addOption("--write-auto-subs")
-                        if (!autoTranslatedSubtitles) {
-                            addOption("--extractor-args", "youtube:skip=translated_subs")
-                        }
                     }
+                    addOption(
+                        "--extractor-args",
+                        youtubeExtractorArgs(autoSubtitle && !autoTranslatedSubtitles),
+                    )
                     if (playlistIndex != null) {
                         addOption("--playlist-items", playlistIndex)
                         addOption("--dump-json")
@@ -367,6 +378,14 @@ object DownloadUtil {
             }
         }
 
+    /**
+     * yt-dlp replaces the whole `youtube:` entry when `--extractor-args` is passed more than once,
+     * so every argument for the extractor has to be joined into a single `;` separated value.
+     */
+    private fun youtubeExtractorArgs(skipTranslatedSubs: Boolean): String =
+        if (skipTranslatedSubs) "youtube:skip=translated_subs;$YOUTUBE_PLAYER_CLIENT_ARG"
+        else "youtube:$YOUTUBE_PLAYER_CLIENT_ARG"
+
     private fun YoutubeDLRequest.enableProxy(proxyUrl: String): YoutubeDLRequest =
         this.addOption("--proxy", proxyUrl)
 
@@ -453,10 +472,11 @@ object DownloadUtil {
                 if (downloadSubtitle) {
                     if (autoSubtitle) {
                         addOption("--write-auto-subs")
-                        if (!autoTranslatedSubtitles) {
-                            addOption("--extractor-args", "youtube:skip=translated_subs")
-                        }
                     }
+                    addOption(
+                        "--extractor-args",
+                        youtubeExtractorArgs(autoSubtitle && !autoTranslatedSubtitles),
+                    )
                     subtitleLanguage
                         .takeIf { it.isNotEmpty() }
                         ?.let { addOption("--sub-langs", it) }
@@ -571,10 +591,11 @@ object DownloadUtil {
 
                     if (autoSubtitle) {
                         addOption("--write-auto-subs")
-                        if (!autoTranslatedSubtitles) {
-                            addOption("--extractor-args", "youtube:skip=translated_subs")
-                        }
                     }
+                    addOption(
+                        "--extractor-args",
+                        youtubeExtractorArgs(autoSubtitle && !autoTranslatedSubtitles),
+                    )
                     subtitleLanguage
                         .takeIf { it.isNotEmpty() }
                         ?.let { addOption("--sub-langs", it) }
