@@ -93,6 +93,7 @@ import com.junkfood.seal.util.DownloadUtil
 import com.junkfood.seal.util.DownloadUtil.toCookiesFileContent
 import com.junkfood.seal.util.FileUtil
 import com.junkfood.seal.util.FileUtil.getCookiesFile
+import com.junkfood.seal.util.FileUtil.getImportedCookiesFile
 import com.junkfood.seal.util.PreferenceUtil.getBoolean
 import com.junkfood.seal.util.PreferenceUtil.updateBoolean
 import com.junkfood.seal.util.USER_AGENT
@@ -155,6 +156,25 @@ fun CookieProfilePage(
             }
         }
 
+    val importLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocument()
+        ) { uri ->
+            uri?.let { source ->
+                scope.launch(Dispatchers.IO) {
+                    runCatching {
+                        context.contentResolver.openInputStream(source)?.use { input ->
+                            FileUtil.writeContentToFile(
+                                input.readBytes().decodeToString(),
+                                context.getImportedCookiesFile(),
+                            )
+                            COOKIES.updateBoolean(true)
+                        }
+                    }
+                }
+            }
+        }
+
     Scaffold(
         modifier = Modifier.fillMaxSize().nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
@@ -207,6 +227,14 @@ fun CookieProfilePage(
                                 exportLauncher.launch(
                                     "cookies_exported${System.currentTimeMillis()}.txt"
                                 )
+                            },
+                        )
+                        DropdownMenuItem(
+                            leadingIcon = { Icon(Icons.Outlined.Cookie, null) },
+                            text = { Text(stringResource(id = R.string.import_from_file)) },
+                            onClick = {
+                                expanded = false
+                                importLauncher.launch(arrayOf("*/*"))
                             },
                         )
                         DropdownMenuItem(
@@ -312,7 +340,10 @@ fun CookieProfilePage(
         ClearCookiesDialog(onDismissRequest = { showClearCookieDialog = false }) {
             view.slightHapticFeedback()
             scope
-                .launch(Dispatchers.IO) { CookieManager.getInstance().removeAllCookies(null) }
+                .launch(Dispatchers.IO) {
+                    CookieManager.getInstance().removeAllCookies(null)
+                    context.getImportedCookiesFile().delete()
+                }
                 .invokeOnCompletion { shouldUpdateCookies = true }
         }
     }
