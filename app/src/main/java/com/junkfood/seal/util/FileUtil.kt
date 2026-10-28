@@ -181,6 +181,15 @@ object FileUtil {
 
     fun Context.getCookiesFile() = File(getConfigDirectory(), "cookies.txt")
 
+    /**
+     * Cookies pasted or imported by the user live here and win over the ones extracted from the
+     * WebView, so the startup refresh never clobbers them.
+     */
+    fun Context.getImportedCookiesFile() = File(getConfigDirectory(), "cookies_imported.txt")
+
+    fun Context.getActiveCookiesFile(): File =
+        getImportedCookiesFile().takeIf { it.exists() && it.length() > 0 } ?: getCookiesFile()
+
     fun getExternalTempDir() =
         File(getExternalDownloadDirectory(), "tmp").apply {
             mkdirs()
