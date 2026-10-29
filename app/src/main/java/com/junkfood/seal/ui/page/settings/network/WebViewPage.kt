@@ -33,15 +33,6 @@ import com.junkfood.seal.util.connectWithDelimiter
 
 private const val TAG = "WebViewPage"
 
-/**
- * Google refuses to sign in from an embedded WebView, whose default user agent carries the "; wv"
- * marker, and shows "This browser or app may not be secure" instead. Posing as desktop Chrome lets
- * the login go through, and the very same user agent is later sent next to the cookies, so the
- * session looks consistent to YouTube instead of half browser and half bot.
- */
-private const val DESKTOP_USER_AGENT =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
-
 data class Cookie(
     val domain: String = "",
     val name: String = "",
@@ -147,8 +138,16 @@ fun WebViewPage(cookiesViewModel: CookiesViewModel, onDismissRequest: () -> Unit
                         javaScriptCanOpenWindowsAutomatically = true
                         javaScriptEnabled = true
                         domStorageEnabled = true
-                        userAgentString = DESKTOP_USER_AGENT
-                        USER_AGENT_STRING.updateString(DESKTOP_USER_AGENT)
+                        // Google refuses to sign in embedded browsers and shows "This browser or
+                        // app may not be secure". It does not just look at the UA string: a
+                        // hand-written desktop UA still gets blocked because it contradicts
+                        // navigator.userAgentData, which keeps reporting Android and the real
+                        // WebView Chrome version. Only the two WebView-only tokens are stripped
+                        // here, so everything Google can cross-check stays truthful.
+                        val spoofedUserAgent =
+                            userAgentString.replace("; wv", "").replace("Version/4.0 ", "")
+                        userAgentString = spoofedUserAgent
+                        USER_AGENT_STRING.updateString(spoofedUserAgent)
                     }
                     cookieManager.setAcceptThirdPartyCookies(this, true)
                 }
