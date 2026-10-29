@@ -179,10 +179,13 @@ class DownloaderV2Impl(private val appContext: Context) : DownloaderV2, KoinComp
         return false
     }
 
-    override fun cancel(task: Task): Boolean = task.cancelImpl()
+    // The queue also lists finished downloads rebuilt from the database, which are not part of
+    // taskStateMap. Acting on those used to hit the non-null lookup in `Task.state` and crash.
+    override fun cancel(task: Task): Boolean =
+        if (taskStateMap.contains(task)) task.cancelImpl() else false
 
     override fun restart(task: Task) {
-        task.restartImpl()
+        if (taskStateMap.contains(task)) task.restartImpl()
     }
 
     private var Task.state: Task.State

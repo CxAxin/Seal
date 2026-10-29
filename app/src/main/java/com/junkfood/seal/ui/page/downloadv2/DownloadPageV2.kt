@@ -116,6 +116,8 @@ import com.junkfood.seal.ui.page.downloadv2.configure.PreferencesMock
 import com.junkfood.seal.ui.svg.DynamicColorImageVectors
 import com.junkfood.seal.ui.svg.drawablevectors.download
 import com.junkfood.seal.ui.theme.SealTheme
+import com.junkfood.seal.database.objects.DownloadedVideoInfo
+import com.junkfood.seal.ui.page.videolist.VideoListViewModel
 import com.junkfood.seal.util.DownloadUtil
 import com.junkfood.seal.util.FileUtil
 import com.junkfood.seal.util.getErrorReport
@@ -126,6 +128,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 
 private const val TAG = "DownloadPageV2"
@@ -312,6 +315,37 @@ private operator fun PaddingValues.plus(other: PaddingValues): PaddingValues {
 
 private const val HeaderSpacingDp = 28
 
+/** How many finished downloads from earlier sessions are shown in the queue at most. */
+private const val MaxHistoryEntriesInQueue = 50
+
+/**
+ * The in-memory task map only lives as long as the process does, so finished downloads used to
+ * vanish from the queue on the next launch and could only be found in the history page. Finished
+ * entries are rebuilt from the database instead, which is where they were moved to on completion.
+ */
+private fun DownloadedVideoInfo.toCompletedTask(): Pair<Task, Task.State> {
+    val viewState =
+        Task.ViewState(
+            url = videoUrl,
+            title = videoTitle,
+            uploader = videoAuthor,
+            extractorKey = extractor,
+            thumbnailUrl = thumbnailUrl.takeIf { it.isNotBlank() },
+        )
+    val task =
+        Task(
+            url = videoUrl,
+            type = Task.TypeInfo.URL,
+            preferences = DownloadUtil.DownloadPreferences.EMPTY,
+        )
+    return task to
+        Task.State(
+            downloadState = Task.DownloadState.Completed(videoPath),
+            videoInfo = null,
+            viewState = viewState,
+        )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DownloadPageImplV2(
@@ -322,9 +356,26 @@ fun DownloadPageImplV2(
     onActionPost: (Task, UiAction) -> Unit,
 ) {
     var activeFilter by remember { mutableStateOf(Filter.All) }
+    val historyViewModel: VideoListViewModel = koinViewModel()
+    val downloadHistory by
+        historyViewModel.videoListFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    val finishedFromHistory by
+        remember(downloadHistory) {
+            derivedStateOf { downloadHistory.take(MaxHistoryEntriesInQueue).map { it.toCompletedTask() } }
+        }
     val filteredMap by
         remember(activeFilter) {
-            derivedStateOf { taskDownloadStateMap.filter { activeFilter.predict(it.toPair()) } }
+            derivedStateOf {
+                // Live tasks win over their history counterparts so a just finished download is
+                // not listed twice.
+                val merged = LinkedHashMap<Task, Task.State>()
+                finishedFromHistory.forEach { (task, state) -> merged[task] = state }
+                taskDownloadStateMap.forEach { (task, state) ->
+                    merged.keys.removeAll { it.url == task.url }
+                    merged[task] = state
+                }
+                merged.filter { activeFilter.predict(it.toPair()) }
+            }
         }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
