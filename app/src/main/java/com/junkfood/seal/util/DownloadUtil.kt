@@ -30,6 +30,7 @@ import com.junkfood.seal.util.FileUtil.getFileName
 import com.junkfood.seal.util.FileUtil.getSdcardTempDir
 import com.junkfood.seal.util.FileUtil.moveFilesToSdcard
 import com.junkfood.seal.util.JsRuntime.enableJsRuntime
+import com.junkfood.seal.util.isDouyinMediaHost
 import com.junkfood.seal.util.PreferenceUtil.COOKIE_HEADER
 import com.junkfood.seal.util.PreferenceUtil.getBoolean
 import com.junkfood.seal.util.PreferenceUtil.getInt
@@ -687,6 +688,7 @@ object DownloadUtil {
         taskId: String,
         downloadPreferences: DownloadPreferences,
         progressCallback: ((Float, Long, String) -> Unit)?,
+        subdirectory: String? = null,
     ): Result<List<String>> {
         if (videoInfo == null)
             return Result.failure(Throwable(context.getString(R.string.fetch_info_error_msg)))
@@ -701,6 +703,9 @@ object DownloadUtil {
                         )
                 }
             val request = YoutubeDLRequest(ShortLinkResolver.resolve(url))
+            if (isDouyinMediaHost(url)) {
+                request.addOption("--referer", "https://www.douyin.com/")
+            }
             val pathBuilder = StringBuilder()
             val outputBuilder = StringBuilder()
 
@@ -781,6 +786,9 @@ object DownloadUtil {
                     }
                     if (subdirectoryExtractor) {
                         pathBuilder.append("/${videoInfo.extractorKey}")
+                    }
+                    if (!subdirectory.isNullOrEmpty()) {
+                        pathBuilder.append("/$subdirectory")
                     }
 
                     if (sdcard) {

@@ -2,10 +2,14 @@ package com.junkfood.seal.ui.page.downloadv2.configure
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.junkfood.seal.App
 import com.junkfood.seal.database.objects.CommandTemplate
 import com.junkfood.seal.download.DownloaderV2
 import com.junkfood.seal.download.Task
+import com.junkfood.seal.util.DouyinResolver
 import com.junkfood.seal.util.DownloadUtil
+import com.junkfood.seal.util.ToastUtil
+import com.junkfood.seal.util.isDouyinUrl
 import com.junkfood.seal.util.PlaylistResult
 import com.junkfood.seal.util.VideoInfo
 import com.yausername.youtubedl_android.YoutubeDL
@@ -178,8 +182,51 @@ class DownloadDialogViewModel(private val downloader: DownloaderV2) : ViewModel(
         urlList: List<String>,
         preferences: DownloadUtil.DownloadPreferences,
     ) {
-        urlList.forEach { downloader.enqueue(Task(url = it, preferences = preferences)) }
-        hideDialog()
+        urlList.filterNot { isDouyinUrl(it) }.forEach {
+            downloader.enqueue(Task(url = it, preferences = preferences))
+        }
+
+        val douyinUrls = urlList.filter { isDouyinUrl(it) }
+        if (douyinUrls.isEmpty()) {
+            hideDialog()
+            return
+        }
+
+        // Douyin links cannot be handed to yt-dlp: they have to be turned into direct media URLs
+        // first, which needs a real browser. Everything else was already queued above.
+        var pending = douyinUrls.size
+        var firstError: Throwable? = null
+        douyinUrls.forEach { url ->
+            DouyinResolver.resolve(App.context, url) { result ->
+                result
+                    .onSuccess { media ->
+                        media.forEach { item ->
+                            downloader.enqueue(
+                                Task(
+                                    url = item.url,
+                                    type = Task.TypeInfo.Douyin,
+                                    preferences = preferences,
+                                )
+                            )
+                        }
+                        if (media.isEmpty()) {
+                            ToastUtil.makeToast("Douyin returned no playable media")
+                        }
+                    }
+                    .onFailure { throwable ->
+                        if (firstError == null) firstError = throwable
+                    }
+                pending--
+                if (pending == 0) {
+                    val error = firstError
+                    if (error != null) {
+                        ToastUtil.makeToast(error.message ?: "Could not read this Douyin link")
+                    } else {
+                        hideDialog()
+                    }
+                }
+            }
+        }
     }
 
     private fun runCommand(

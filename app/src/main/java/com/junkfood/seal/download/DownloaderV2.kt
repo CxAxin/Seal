@@ -42,6 +42,9 @@ private const val TAG = "DownloaderV2"
 
 private const val MAX_CONCURRENCY = 3
 
+/** Where Douyin media is kept, so it does not get lost among everything else. */
+const val DOUYIN_SUBDIRECTORY = "Douyin"
+
 interface DownloaderV2 {
     fun getTaskStateMap(): SnapshotStateMap<Task, Task.State>
 
@@ -293,6 +296,7 @@ class DownloaderV2Impl(private val appContext: Context) : DownloaderV2, KoinComp
                         videoInfo = info,
                         taskId = id,
                         downloadPreferences = preferences,
+                        subdirectory = if (type is Task.TypeInfo.Douyin) DOUYIN_SUBDIRECTORY else null,
                         progressCallback = { progressPercentage, _, text ->
                             val progress = progressPercentage / 100f
                             when (val preState = downloadState) {

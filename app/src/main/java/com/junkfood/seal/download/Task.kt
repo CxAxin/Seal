@@ -45,6 +45,12 @@ data class Task(
         @Serializable data class CustomCommand(val template: CommandTemplate) : TypeInfo
 
         @Serializable data object URL : TypeInfo
+
+        /**
+         * A direct media URL produced by [com.junkfood.seal.util.DouyinResolver]. The URL itself
+         * looks generic, so the type is what tells the downloader to keep it in the Douyin folder.
+         */
+        @Serializable data object Douyin : TypeInfo
     }
 
     @Serializable
