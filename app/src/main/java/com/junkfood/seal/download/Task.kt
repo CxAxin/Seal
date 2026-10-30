@@ -18,6 +18,7 @@ private val TypeInfo.id: String
             is TypeInfo.CustomCommand -> "${template.id}_${template.name}"
             is TypeInfo.Playlist -> "$index"
             TypeInfo.URL -> ""
+            TypeInfo.Douyin -> "douyin"
         }
 
 private fun makeId(url: String, type: TypeInfo, preferences: DownloadUtil.DownloadPreferences): String =
