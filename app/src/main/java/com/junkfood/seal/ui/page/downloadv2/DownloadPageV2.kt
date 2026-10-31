@@ -192,7 +192,7 @@ sealed interface UiAction {
 
     data object Resume : UiAction
 
-    data class CopyErrorReport(val throwable: Throwable) : UiAction
+    data class CopyErrorReport(val report: String) : UiAction
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -225,7 +225,7 @@ fun DownloadPageV2(
             UiAction.Resume -> downloader.restart(task)
             is UiAction.CopyErrorReport -> {
                 clipboardManager.setText(
-                    AnnotatedString(getErrorReport(action.throwable, task.url))
+                    AnnotatedString(getErrorReport(action.report, task.url))
                 )
                 context.makeToast(R.string.error_copied)
             }

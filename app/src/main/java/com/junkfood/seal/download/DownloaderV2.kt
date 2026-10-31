@@ -115,7 +115,7 @@ class DownloaderV2Impl(private val appContext: Context) : DownloaderV2, KoinComp
             enqueueFromBackup()
 
             snapshotFlow
-                .map { it.filter { it.value.downloadState !is Completed } }
+                .map { it.filter { (task, state) -> task.isWorthKeeping() && state.downloadState !is Completed } }
                 .distinctUntilChanged()
                 .collect {
                     it.forEach { Log.d(TAG, it.value.viewState.title) }
@@ -124,10 +124,19 @@ class DownloaderV2Impl(private val appContext: Context) : DownloaderV2, KoinComp
         }
     }
 
+    /**
+     * A Douyin task is built around one signed media link, and the signature expires within
+     * minutes. Writing it down only brings back an entry that cannot work again, and it sits in the
+     * queue looking like a broken download, so those are left out.
+     */
+    private fun Task.isWorthKeeping(): Boolean = type !is TypeInfo.Douyin
+
     private fun enqueueFromBackup() {
         val taskList =
             PreferenceUtil.decodeTaskListBackup()
-                .filter { it.value.downloadState !is Completed }
+                .filter { (task, state) ->
+                    task.isWorthKeeping() && state.downloadState !is Completed
+                }
                 .mapValues { (_, state) ->
                     val preState = state.downloadState
                     val downloadState =
@@ -155,6 +164,10 @@ class DownloaderV2Impl(private val appContext: Context) : DownloaderV2, KoinComp
     private fun Map<Task, Task.State>.countRunning(): Int = count { (_, state) ->
         state.downloadState is Running || state.downloadState is FetchingInfo
     }
+
+    /** Keeps what failed, since a restored task no longer carries the [Throwable] itself. */
+    private fun errorState(throwable: Throwable, action: Task.RestartableAction): Error =
+        Error(throwable = throwable, action = action, report = throwable.stackTraceToString())
 
     override fun getTaskStateMap(): SnapshotStateMap<Task, Task.State> {
         return taskStateMap
@@ -272,7 +285,7 @@ class DownloaderV2Impl(private val appContext: Context) : DownloaderV2, KoinComp
                         if (throwable is YoutubeDL.CanceledException) {
                             return@onFailure
                         }
-                        task.downloadState = Error(throwable = throwable, action = FetchInfo)
+                        task.downloadState = errorState(throwable, FetchInfo)
                         NotificationUtil.notifyError(
                             title = viewState.title,
                             textId = R.string.download_error_msg,
@@ -344,7 +357,7 @@ class DownloaderV2Impl(private val appContext: Context) : DownloaderV2, KoinComp
                         if (throwable is YoutubeDL.CanceledException) {
                             return@onFailure
                         }
-                        downloadState = Error(throwable = throwable, action = Download)
+                        downloadState = errorState(throwable, Download)
                         NotificationUtil.notifyError(
                             title = viewState.title,
                             textId = R.string.fetch_info_error_msg,
@@ -434,7 +447,7 @@ class DownloaderV2Impl(private val appContext: Context) : DownloaderV2, KoinComp
                         if (throwable is YoutubeDL.CanceledException) {
                             return@onFailure
                         }
-                        downloadState = Error(throwable = throwable, action = Download)
+                        downloadState = errorState(throwable, Download)
                         NotificationUtil.notifyError(
                             title = viewState.title,
                             textId = R.string.fetch_info_error_msg,

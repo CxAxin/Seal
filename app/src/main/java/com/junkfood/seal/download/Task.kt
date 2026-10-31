@@ -24,6 +24,13 @@ private val TypeInfo.id: String
 private fun makeId(url: String, type: TypeInfo, preferences: DownloadUtil.DownloadPreferences): String =
     "${url}_${type.id}_${preferences.hashCode()}"
 
+/**
+ * The saved [Task.DownloadState.Error.report] when the task came back from the backup, since the
+ * [Throwable] itself is [Transient] and is only an empty placeholder by then.
+ */
+val Task.DownloadState.Error.errorReport: String
+    get() = report?.takeIf { it.isNotBlank() } ?: throwable.stackTraceToString()
+
 @Serializable
 data class Task(
     val url: String,
@@ -104,6 +111,15 @@ data class Task(
         data class Error(
             @Transient val throwable: Throwable = Throwable(),
             override val action: RestartableAction,
+            /**
+             * What the failure said, written down at the time it happened.
+             *
+             * A [Throwable] is marked [Transient], so it never reaches the backup and a restored
+             * task gets the empty one from the default value instead. Without this the task looks
+             * like it failed for no reason, and the report is only the stack of that placeholder
+             * being constructed.
+             */
+            val report: String? = null,
         ) : DownloadState, Restartable
 
         @Serializable data class Completed(val filePath: String?) : DownloadState

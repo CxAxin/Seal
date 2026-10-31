@@ -112,8 +112,10 @@ fun Number?.toBitrateText(): String {
  * used to end with the word "null". The stack trace names the type and the place, so it says
  * something even when the message does not.
  */
-fun getErrorReport(th: Throwable, url: String): String =
-    App.getVersionReport() + "\nURL: ${url}\n${th.stackTraceToString()}"
+fun getErrorReport(report: String, url: String): String =
+    App.getVersionReport() + "\nURL: ${url}\n${report}"
+
+fun getErrorReport(th: Throwable, url: String): String = getErrorReport(th.stackTraceToString(), url)
 
 @Deprecated(
     "Use findURLsFromString instead",

@@ -61,6 +61,7 @@ import com.junkfood.seal.download.Task.DownloadState.FetchingInfo
 import com.junkfood.seal.download.Task.DownloadState.Idle
 import com.junkfood.seal.download.Task.DownloadState.ReadyWithInfo
 import com.junkfood.seal.download.Task.DownloadState.Running
+import com.junkfood.seal.download.errorReport
 import com.junkfood.seal.ui.common.LocalFixedColorRoles
 import com.junkfood.seal.ui.component.ActionSheetItem
 import com.junkfood.seal.ui.component.ActionSheetPrimaryButton
@@ -310,7 +311,7 @@ fun LazyListScope.ActionButtons(
             }
             item(key = "ErrorReportButton") {
                 ErrorReportButton(modifier = Modifier.animateItem()) {
-                    onActionPost(task, UiAction.CopyErrorReport(downloadState.throwable))
+                    onActionPost(task, UiAction.CopyErrorReport(downloadState.errorReport))
                 }
             }
         }
