@@ -127,12 +127,16 @@ class DownloadDialogViewModel(private val downloader: DownloaderV2) : ViewModel(
 
     private fun fetchPlaylist(action: Action.FetchPlaylist) {
         val (url, preferences) = action
+        // Same key has to reach yt-dlp, otherwise cancelling only cancels the coroutine and the
+        // process keeps running until it decides to stop on its own.
+        val taskKey = "FetchPlaylist_$url"
 
         val job =
             viewModelScope.launch(Dispatchers.IO) {
                 DownloadUtil.getPlaylistOrVideoInfo(
                         playlistURL = url,
                         downloadPreferences = preferences,
+                        taskKey = taskKey,
                     )
                     .onSuccess { info ->
                         withContext(Dispatchers.Main) {
@@ -153,10 +157,16 @@ class DownloadDialogViewModel(private val downloader: DownloaderV2) : ViewModel(
                         }
                     }
                     .onFailure { th ->
-                        mSheetStateFlow.update { SheetState.Error(action = action, throwable = th) }
+                        if (th is YoutubeDL.CanceledException) {
+                            return@onFailure
+                        }
+                        th.printStackTrace()
+                        withContext(Dispatchers.Main) {
+                            mSheetStateFlow.update { SheetState.Error(action = action, throwable = th) }
+                        }
                     }
             }
-        mSheetStateFlow.update { SheetState.Loading(taskKey = "FetchPlaylist_$url", job = job) }
+        mSheetStateFlow.update { SheetState.Loading(taskKey = taskKey, job = job) }
     }
 
     private fun fetchFormat(action: Action.FetchFormats) {
@@ -178,6 +188,10 @@ class DownloadDialogViewModel(private val downloader: DownloaderV2) : ViewModel(
                         }
                     }
                     .onFailure { th ->
+                        if (th is YoutubeDL.CanceledException) {
+                            return@onFailure
+                        }
+                        th.printStackTrace()
                         withContext(Dispatchers.Main) {
                             mSheetStateFlow.update { SheetState.Error(action, throwable = th) }
                         }

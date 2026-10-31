@@ -303,7 +303,7 @@ private fun ErrorPage(modifier: Modifier = Modifier, state: Error, onActionPost:
             modifier = Modifier.padding(top = 12.dp),
         )
         Text(
-            text = state.throwable.message.toString(),
+            text = state.throwable.errorMessage(),
             style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier =
@@ -322,7 +322,8 @@ private fun ErrorPage(modifier: Modifier = Modifier, state: Error, onActionPost:
                     view.longPressHapticFeedback()
                     clipboardManager.setText(
                         AnnotatedString(
-                            App.getVersionReport() + "\nURL: ${url}\n${state.throwable.message}"
+                            App.getVersionReport() +
+                                "\nURL: ${url}\n${state.throwable.stackTraceToString()}"
                         )
                     )
                     ToastUtil.makeToast(R.string.error_copied)
@@ -332,6 +333,18 @@ private fun ErrorPage(modifier: Modifier = Modifier, state: Error, onActionPost:
             }
         }
     }
+}
+
+/**
+ * yt-dlp reports its reason as the exception message, but a few failures carry none — a run that
+ * was killed, or a wait that got interrupted — and the page used to show the word "null" for
+ * those. Fall back to the exception type, and follow the cause chain, so there is always
+ * something real to read.
+ */
+private fun Throwable.errorMessage(): String {
+    val own = message?.trim().takeUnless { it.isNullOrEmpty() } ?: "(${javaClass.simpleName})"
+    val cause = cause?.let { "\n\n${it.errorMessage()}" } ?: ""
+    return own + cause
 }
 
 @Composable

@@ -95,10 +95,19 @@ object DownloadUtil {
     private const val CROP_ARTWORK_COMMAND =
         """--ppa "ffmpeg: -c:v mjpeg -vf crop=\"'if(gt(ih,iw),iw,ih)':'if(gt(iw,ih),ih,iw)'\"""""
 
+    /**
+     * Playlist info used to be fetched without the JavaScript runtime and without the extra player
+     * clients, unlike every other request. YouTube needs both, so this step failed while the same
+     * link downloaded fine once it was queued.
+     *
+     * @param taskKey when given, it is used as the yt-dlp process id so the caller can actually
+     *   cancel the run; passing the URL instead leaves the process unkillable.
+     */
     @CheckResult
     fun getPlaylistOrVideoInfo(
         playlistURL: String,
         downloadPreferences: DownloadPreferences = DownloadPreferences.createFromPreferences(),
+        taskKey: String? = null,
     ): Result<YoutubeDLInfo> =
         YoutubeDL.runCatching {
             ToastUtil.makeToastSuspend(context.getString(R.string.fetching_playlist_info))
@@ -109,7 +118,7 @@ object DownloadUtil {
                 addOption("--dump-single-json")
                 addOption("-o", BASENAME)
                 addOption("-R", "1")
-                addOption("--socket-timeout", "5")
+                addOption("--socket-timeout", "15")
                 downloadPreferences.run {
                     if (extractAudio) {
                         addOption("-x")
@@ -128,8 +137,11 @@ object DownloadUtil {
                         addOption("--restrict-filenames")
                     }
                 }
+                addOption("--extractor-args", youtubeExtractorArgs(false))
+                enableJsRuntime()
             }
-            execute(request, playlistURL).out.run {
+            for (s in request.buildCommand()) Log.d(TAG, s)
+            execute(request, taskKey ?: playlistURL).out.run {
                 val playlistInfo = jsonFormat.decodeFromString<PlaylistResult>(this)
                 if (playlistInfo.type != "playlist") {
                     jsonFormat.decodeFromString<VideoInfo>(this)
