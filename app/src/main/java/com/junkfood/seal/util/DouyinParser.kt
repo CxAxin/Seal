@@ -55,7 +55,19 @@ fun extractAwemeId(value: String?): String? {
  * that arrives without a Douyin referer.
  */
 private val DOUYIN_MEDIA_HOST_SUFFIXES =
-    listOf("douyinvod.com", "amemv.com", "snssdk.com", "iesdouyin.com", "douyin.com")
+    listOf(
+        // video
+        "douyinvod.com",
+        "amemv.com",
+        "snssdk.com",
+        "iesdouyin.com",
+        "douyin.com",
+        // images of a slide post and their covers live on the ByteDance image CDNs
+        "douyinpic.com",
+        "ecombdimg.com",
+        "byteimg.com",
+        "bytecdn.cn",
+    )
 
 fun isDouyinMediaHost(url: String?): Boolean {
     if (url.isNullOrBlank()) return false

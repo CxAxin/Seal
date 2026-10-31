@@ -92,6 +92,13 @@ object DownloadUtil {
      */
     private const val YOUTUBE_PLAYER_CLIENT_ARG = "player_client=default,tv_downgraded,web_embedded"
 
+    /**
+     * Douyin's CDN answers 403 to a request that carries no referer, no matter what user agent it
+     * presents, while a Douyin referer alone is enough to get the media. Every request that can
+     * touch that CDN has to carry it, not just the download.
+     */
+    const val DOUYIN_REFERER = "https://www.douyin.com/"
+
     private const val CROP_ARTWORK_COMMAND =
         """--ppa "ffmpeg: -c:v mjpeg -vf crop=\"'if(gt(ih,iw),iw,ih)':'if(gt(iw,ih),ih,iw)'\"""""
 
@@ -178,7 +185,14 @@ object DownloadUtil {
                     if (extractAudio) {
                         addOption("-x")
                     }
-                    applyFormatSorter(this@with, toFormatSorter())
+                    // A Douyin CDN answers 403 to anything without a Douyin referer, and that
+                    // includes this very first request: without it the link is rejected before
+                    // there is ever something to download.
+                    if (isDouyinMediaHost(url)) {
+                        addOption("--referer", DOUYIN_REFERER)
+                    } else {
+                        applyFormatSorter(this@with, toFormatSorter())
+                    }
                     if (cookies) {
                         enableCookies(userAgentString)
                     }
@@ -468,7 +482,9 @@ object DownloadUtil {
         this.addOption("--downloader", "libaria2c.so")
 
     private fun YoutubeDLRequest.addOptionsForVideoDownloads(
-        downloadPreferences: DownloadPreferences
+        downloadPreferences: DownloadPreferences,
+        /** A direct Douyin link is already the final file: sorting would reject it. */
+        skipFormatSorter: Boolean = false,
     ): YoutubeDLRequest =
         this.apply {
             downloadPreferences.run {
@@ -479,7 +495,7 @@ object DownloadUtil {
                     if (mergeAudioStream) {
                         addOption("--audio-multistreams")
                     }
-                } else {
+                } else if (!skipFormatSorter) {
                     applyFormatSorter(this, toFormatSorter())
                 }
                 if (downloadSubtitle) {
@@ -715,8 +731,9 @@ object DownloadUtil {
                         )
                 }
             val request = YoutubeDLRequest(ShortLinkResolver.resolve(url))
-            if (isDouyinMediaHost(url)) {
-                request.addOption("--referer", "https://www.douyin.com/")
+            val isDouyinMedia = isDouyinMediaHost(url)
+            if (isDouyinMedia) {
+                request.addOption("--referer", DOUYIN_REFERER)
             }
             val pathBuilder = StringBuilder()
             val outputBuilder = StringBuilder()
@@ -786,7 +803,10 @@ object DownloadUtil {
                     } else {
                         if (privateDirectory) pathBuilder.append(App.privateDownloadDir)
                         else pathBuilder.append(videoDownloadDir)
-                        addOptionsForVideoDownloads(downloadPreferences)
+                        addOptionsForVideoDownloads(
+                            downloadPreferences,
+                            skipFormatSorter = isDouyinMedia,
+                        )
                     }
                     if (sponsorBlock) {
                         addOption("--sponsorblock-remove", sponsorBlockCategory)

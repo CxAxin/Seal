@@ -106,8 +106,14 @@ fun Number?.toBitrateText(): String {
     }
 }
 
+/**
+ * The message is not enough on its own: a cancelled run, an interrupted wait, and a task restored
+ * from the backup (its throwable is @Transient and comes back empty) all have none, and the report
+ * used to end with the word "null". The stack trace names the type and the place, so it says
+ * something even when the message does not.
+ */
 fun getErrorReport(th: Throwable, url: String): String =
-    App.getVersionReport() + "\nURL: ${url}\n${th.message}"
+    App.getVersionReport() + "\nURL: ${url}\n${th.stackTraceToString()}"
 
 @Deprecated(
     "Use findURLsFromString instead",
