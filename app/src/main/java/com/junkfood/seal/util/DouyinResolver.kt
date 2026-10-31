@@ -1,8 +1,10 @@
 package com.junkfood.seal.util
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -10,6 +12,8 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.json.JSONObject
+import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
@@ -27,7 +31,8 @@ import java.util.concurrent.TimeUnit
 object DouyinResolver {
 
     private const val TAG = "DouyinResolver"
-    private const val OVERALL_TIMEOUT_MS = 40_000L
+    private const val OVERALL_TIMEOUT_MS = 45_000L
+    private const val VERIFICATION_GRACE_MS = 300_000L
     private const val INLINE_FALLBACK_DELAY_MS = 3_000L
 
     private val executor = Executors.newSingleThreadExecutor()
@@ -39,6 +44,85 @@ object DouyinResolver {
             .followRedirects(false)
             .build()
     }
+
+    private val CHROME_VERSION_PATTERN = Regex("Chrome/([0-9.]+)", RegexOption.IGNORE_CASE)
+
+    /**
+     * Douyin only asks for `/aweme/v1/web/aweme/detail/` on the desktop site, so a phone user
+     * agent loads a page that never requests it and there is nothing to capture. The Chrome
+     * version is carried over from the real one so the string cannot contradict itself.
+     */
+    fun desktopUserAgent(defaultUserAgent: String?): String {
+        val version =
+            defaultUserAgent?.let { CHROME_VERSION_PATTERN.find(it)?.groupValues?.getOrNull(1) }
+                ?: "140.0.0.0"
+        return "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) " +
+            "Chrome/$version Safari/537.36"
+    }
+
+    /** A visible page can be asked to solve a captcha; a hidden one cannot, so it is told apart. */
+    interface Session {
+        fun cancel()
+    }
+
+    /** Headless pass. Only useful while Douyin does not challenge the session. */
+    fun resolve(
+        context: Context,
+        url: String,
+        onResult: (Result<List<DouyinMedia>>) -> Unit,
+    ): Session {
+        val controller = Controller(url, onStep = {}, onResult = onResult)
+        mainHandler.post {
+            val view = WebView(context.applicationContext)
+            configure(view)
+            controller.attach(view, ownsView = true)
+        }
+        return controller
+    }
+
+    /**
+     * Drives a WebView the caller already shows on screen, which is the only way through when
+     * Douyin answers with a captcha: the challenge is solved by the person watching it.
+     */
+    fun attach(
+        view: WebView,
+        url: String,
+        onStep: (String) -> Unit,
+        onResult: (Result<List<DouyinMedia>>) -> Unit,
+    ): Session {
+        val controller = Controller(url, onStep = onStep, onResult = onResult)
+        configure(view)
+        controller.attach(view, ownsView = false)
+        return controller
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun configure(view: WebView) {
+        view.settings.run {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            javaScriptCanOpenWindowsAutomatically = true
+            // A desktop page in a phone sized view: let it lay out wide and fit the screen.
+            useWideViewPort = true
+            loadWithOverviewMode = true
+            userAgentString = desktopUserAgent(userAgentString)
+        }
+        runCatching { CookieManager.getInstance().setAcceptThirdPartyCookies(view, true) }
+    }
+
+    private val MUTE_MEDIA_SCRIPT =
+        """
+        (function(){
+          function mute(items){for(var i=0;i<items.length;i++){try{items[i].muted=true;items[i].volume=0;}catch(e){}}}
+          mute(document.querySelectorAll('audio,video'));
+          if(!window.__sealMuteInstalled){
+            window.__sealMuteInstalled=true;
+            new MutationObserver(function(){mute(document.querySelectorAll('audio,video'));})
+              .observe(document.documentElement,{childList:true,subtree:true});
+          }
+          return true;
+        })()
+        """.trimIndent()
 
     private val INLINE_DATA_SCRIPT =
         """
@@ -53,130 +137,175 @@ object DouyinResolver {
         })()
         """.trimIndent()
 
-    /**
-     * @param onResult always invoked exactly once, on the main thread
-     */
-    fun resolve(context: Context, url: String, onResult: (Result<List<DouyinMedia>>) -> Unit) {
-        val awemeId = extractAwemeId(url)
-        var settled = false
-        var webView: WebView? = null
+    private fun isVerificationUrl(url: String): Boolean {
+        val lower = url.lowercase(Locale.US)
+        return lower.contains("captcha") ||
+            lower.contains("verify") ||
+            lower.contains("/login") ||
+            lower.contains("passport")
+    }
 
-        fun settle(result: Result<List<DouyinMedia>>) {
+    private class Controller(
+        private val startUrl: String,
+        private val onStep: (String) -> Unit,
+        private val onResult: (Result<List<DouyinMedia>>) -> Unit,
+    ) : Session {
+        @Volatile private var settled = false
+        private var ownsView = false
+        private var view: WebView? = null
+        private var awemeId: String? = extractAwemeId(startUrl)
+        private var startedAt = 0L
+
+        @Volatile private var verificationSeen = false
+
+        private val timeout = Runnable { onTimeout() }
+
+        fun attach(webView: WebView, ownsView: Boolean) {
+            this.view = webView
+            this.ownsView = ownsView
+            this.startedAt = SystemClock.elapsedRealtime()
+            webView.webViewClient = client
+            mainHandler.postDelayed(timeout, OVERALL_TIMEOUT_MS)
+            webView.loadUrl(startUrl)
+        }
+
+        private fun postStep(text: String) {
+            mainHandler.post { onStep(text) }
+        }
+
+        private fun settle(result: Result<List<DouyinMedia>>) {
             if (settled) return
             settled = true
             mainHandler.post {
-                runCatching { webView?.stopLoading() }
-                runCatching { webView?.destroy() }
-                webView = null
+                mainHandler.removeCallbacks(timeout)
+                runCatching { view?.stopLoading() }
+                // Keep the cookies for the next work: they are what makes the challenge pass.
+                if (result.isSuccess) runCatching { CookieManager.getInstance().flush() }
+                if (ownsView) runCatching { view?.destroy() }
                 onResult(result)
             }
         }
 
-        mainHandler.post {
-            val view =
-                WebView(context.applicationContext).apply {
-                    settings.run {
-                        javaScriptEnabled = true
-                        domStorageEnabled = true
-                        javaScriptCanOpenWindowsAutomatically = true
-                        // Same trick as the cookie login page: drop only the embedded browser
-                        // markers so the UA still matches what the browser reports about itself.
-                        userAgentString =
-                            userAgentString.replace("; wv", "").replace("Version/4.0 ", "")
-                    }
-                }
-            webView = view
-            runCatching { CookieManager.getInstance().setAcceptThirdPartyCookies(view, true) }
+        override fun cancel() {
+            if (settled) return
+            settled = true
+            mainHandler.post {
+                mainHandler.removeCallbacks(timeout)
+                runCatching { view?.stopLoading() }
+                if (ownsView) runCatching { view?.destroy() }
+            }
+        }
 
-            view.webViewClient =
-                object : WebViewClient() {
-                    override fun shouldInterceptRequest(
-                        view: WebView,
-                        request: WebResourceRequest,
-                    ): WebResourceResponse? {
-                        val uri = request.url
-                        if (request.method.equals("GET", ignoreCase = true) && isWebDetailEndpoint(uri)) {
-                            val detailUrl = uri.toString()
-                            val headers = request.requestHeaders.toMap()
-                            val cookie =
-                                runCatching { CookieManager.getInstance().getCookie(detailUrl) }
-                                    .getOrNull()
-                            executor.execute {
-                                replayDetailRequest(detailUrl, headers, cookie, awemeId, ::settle)
-                            }
-                        }
-                        return null
-                    }
-
-                    override fun onPageFinished(view: WebView, url: String) {
-                        // The challenge runs after load, so give the request a moment before
-                        // falling back to whatever the page left inlined.
-                        mainHandler.postDelayed(
-                            {
-                                if (settled) return@postDelayed
-                                view.evaluateJavascript(INLINE_DATA_SCRIPT) { value ->
-                                    val json =
-                                        value
-                                            .trim()
-                                            .trim('"')
-                                            .replace("\\\"", "\"")
-                                            .replace("\\n", "")
-                                    if (json.length < 2) return@evaluateJavascript
-                                    val media = parseDouyinDetail(json, awemeId)
-                                    if (media.isNotEmpty()) settle(Result.success(media))
-                                }
-                            },
-                            INLINE_FALLBACK_DELAY_MS,
-                        )
-                    }
-                }
-
-            view.loadUrl(url)
-
-            mainHandler.postDelayed(
-                {
-                    settle(
-                        Result.failure(
-                            IllegalStateException(
-                                "Timed out waiting for the Douyin page. Open the work in a browser " +
-                                    "once and try again."
-                            )
-                        )
+        private fun onTimeout() {
+            if (settled) return
+            val waited = SystemClock.elapsedRealtime() - startedAt
+            if (verificationSeen && waited < VERIFICATION_GRACE_MS) {
+                postStep("Still waiting for Douyin to hand over the media.")
+                mainHandler.postDelayed(timeout, 60_000L)
+                return
+            }
+            settle(
+                Result.failure(
+                    IllegalStateException(
+                        if (verificationSeen) "Douyin keeps asking for a captcha or a login"
+                        else "Could not read this Douyin work"
                     )
-                },
-                OVERALL_TIMEOUT_MS,
+                )
             )
         }
-    }
 
-    private fun replayDetailRequest(
-        url: String,
-        headers: Map<String, String>,
-        cookie: String?,
-        awemeId: String?,
-        settle: (Result<List<DouyinMedia>>) -> Unit,
-    ) {
-        runCatching {
-                val builder = Request.Builder().url(url).get()
-                headers.forEach { (key, value) ->
-                    // Let OkHttp negotiate encoding instead of inheriting one it cannot honour.
-                    if (!key.equals("Accept-Encoding", ignoreCase = true)) builder.header(key, value)
-                }
-                if (!cookie.isNullOrBlank()) builder.header("Cookie", cookie)
-                httpClient.newCall(builder.build()).execute().use { response ->
-                    val body = response.body?.string().orEmpty()
-                    if (!response.isSuccessful || body.isBlank()) {
-                        settle(Result.failure(IllegalStateException("Douyin refused the request")))
-                        return
+        private val client =
+            object : WebViewClient() {
+                override fun shouldInterceptRequest(
+                    view: WebView,
+                    request: WebResourceRequest,
+                ): WebResourceResponse? {
+                    val uri = request.url
+                    if (request.method.equals("GET", ignoreCase = true) && isWebDetailEndpoint(uri)) {
+                        val detailUrl = uri.toString()
+                        val headers = request.requestHeaders.toMap()
+                        val cookie =
+                            runCatching { CookieManager.getInstance().getCookie(detailUrl) }
+                                .getOrNull()
+                        executor.execute { replay(detailUrl, headers, cookie) }
                     }
-                    val media = parseDouyinDetail(body, awemeId)
-                    settle(
-                        if (media.isEmpty())
-                            Result.failure(IllegalStateException("No media in the Douyin response"))
-                        else Result.success(media)
-                    )
+                    return null
+                }
+
+                // Every hop has to stay inside this WebView, otherwise the short link would leave.
+                override fun shouldOverrideUrlLoading(
+                    view: WebView,
+                    request: WebResourceRequest,
+                ): Boolean = false
+
+                override fun onPageFinished(view: WebView, url: String) {
+                    extractAwemeId(url)?.let { awemeId = it }
+                    if (isVerificationUrl(url)) {
+                        verificationSeen = true
+                        postStep(
+                            "Douyin wants a captcha or a login. Finish it on this page and the " +
+                                "rest happens on its own."
+                        )
+                    }
+                    runCatching { view.evaluateJavascript(MUTE_MEDIA_SCRIPT, null) }
+                    // The challenge fires after load, so give the request a moment before
+                    // falling back to whatever the page left inlined.
+                    mainHandler.postDelayed({ readInline(view) }, INLINE_FALLBACK_DELAY_MS)
                 }
             }
-            .onFailure { settle(Result.failure(it)) }
+
+        private fun readInline(view: WebView) {
+            if (settled) return
+            view.evaluateJavascript(INLINE_DATA_SCRIPT) { value ->
+                if (settled) return@evaluateJavascript
+                val json = unwrapJsString(value)
+                if (json.length < 2) return@evaluateJavascript
+                val media = parseDouyinDetail(json, awemeId)
+                if (media.isNotEmpty()) settle(Result.success(media))
+            }
+        }
+
+        private fun replay(url: String, headers: Map<String, String>, cookie: String?) {
+            if (settled) return
+            runCatching {
+                    val builder = Request.Builder().url(url).get()
+                    headers.forEach { (key, value) ->
+                        // Let OkHttp negotiate encoding instead of inheriting one it cannot honour.
+                        if (!key.equals("Accept-Encoding", ignoreCase = true))
+                            builder.header(key, value)
+                    }
+                    if (!cookie.isNullOrBlank()) builder.header("Cookie", cookie)
+                    httpClient.newCall(builder.build()).execute().use { response ->
+                        val body = response.body?.string().orEmpty()
+                        if (!response.isSuccessful || body.isBlank()) {
+                            postStep("Douyin refused the request (HTTP ${response.code}).")
+                            return
+                        }
+                        val status =
+                            runCatching { JSONObject(body).optInt("status_code", -1) }
+                                .getOrDefault(-1)
+                        val media = parseDouyinDetail(body, awemeId)
+                        // A mismatched or filtered response is not a dead end: another request may
+                        // still carry this work, so only the timeout ends the session.
+                        if (media.isEmpty()) {
+                            postStep(
+                                if (status > 0) "Douyin answered with status $status."
+                                else "That response carried no playable media."
+                            )
+                            return
+                        }
+                        settle(Result.success(media))
+                    }
+                }
+                .onFailure { postStep("Could not reach Douyin: ${it.message}") }
+        }
     }
+}
+
+/** `evaluateJavascript` hands back a JSON string literal; unwrap it without evaluating anything. */
+private fun unwrapJsString(value: String?): String {
+    if (value.isNullOrBlank()) return ""
+    val trimmed = value.trim()
+    if (!trimmed.startsWith("\"")) return trimmed
+    return runCatching { JSONObject("{\"v\":$trimmed}").getString("v") }.getOrDefault("")
 }

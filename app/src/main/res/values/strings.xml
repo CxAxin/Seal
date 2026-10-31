@@ -451,4 +451,10 @@
         <item quantity="one">%d audio</item>
         <item quantity="other">%d audios</item>
     </plurals>
+
+    <string name="douyin_capture_title">Douyin</string>
+    <string name="douyin_capture_opening">Opening the work page…</string>
+    <string name="douyin_capture_done">Found %1$d item(s), starting the download</string>
+    <string name="douyin_capture_no_media">Douyin returned no playable media</string>
+    <string name="douyin_capture_failed">Could not read this Douyin work</string>
 </resources>

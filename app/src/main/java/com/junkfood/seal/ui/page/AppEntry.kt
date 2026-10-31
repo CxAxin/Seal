@@ -44,6 +44,7 @@ import com.junkfood.seal.ui.common.slideInVerticallyComposable
 import com.junkfood.seal.ui.page.command.TaskListPage
 import com.junkfood.seal.ui.page.command.TaskLogPage
 import com.junkfood.seal.ui.page.downloadv2.configure.DownloadDialogViewModel
+import com.junkfood.seal.ui.page.douyin.DouyinCapturePage
 import com.junkfood.seal.ui.page.downloadv2.DownloadPageV2
 import com.junkfood.seal.ui.page.settings.SettingsPage
 import com.junkfood.seal.ui.page.settings.about.AboutPage
@@ -103,6 +104,13 @@ fun AppEntry(dialogViewModel: DownloadDialogViewModel) {
         }
     }
 
+    // Douyin needs a real browser on screen, and sometimes a captcha only a person can solve.
+    LaunchedEffect(sheetState) {
+        if (sheetState is DownloadDialogViewModel.SheetState.DouyinCapture) {
+            navController.navigate(Route.DOUYIN_CAPTURE) { launchSingleTop = true }
+        }
+    }
+
     val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
     var currentTopDestination by rememberSaveable { mutableStateOf(currentRoute) }
 
@@ -153,6 +161,23 @@ fun AppEntry(dialogViewModel: DownloadDialogViewModel) {
                     )
                 }
                 animatedComposable(Route.DOWNLOADS) { VideoListPage { onNavigateBack() } }
+                animatedComposable(Route.DOUYIN_CAPTURE) {
+                    DouyinCapturePage(
+                        url =
+                            (sheetState as? DownloadDialogViewModel.SheetState.DouyinCapture)
+                                ?.url
+                                .orEmpty(),
+                        // Queueing first and leaving second keeps the queue page in view.
+                        onMedia = { media ->
+                            dialogViewModel.onDouyinMedia(media)
+                            onNavigateBack()
+                        },
+                        onDismiss = {
+                            dialogViewModel.onDouyinCancelled()
+                            onNavigateBack()
+                        },
+                    )
+                }
                 animatedComposableVariant(Route.TASK_LIST) {
                     TaskListPage(
                         onNavigateBack = onNavigateBack,

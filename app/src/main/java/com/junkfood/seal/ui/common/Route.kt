@@ -31,6 +31,7 @@ object Route {
     const val AUTO_UPDATE = "auto_update"
     const val DONATE = "donate"
     const val TROUBLESHOOTING = "troubleshooting"
+    const val DOUYIN_CAPTURE = "douyin_capture"
 
     const val TASK_HASHCODE = "task_hashcode"
     const val TEMPLATE_ID = "template_id"

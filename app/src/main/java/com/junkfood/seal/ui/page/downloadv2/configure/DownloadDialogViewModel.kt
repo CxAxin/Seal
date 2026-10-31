@@ -2,13 +2,11 @@ package com.junkfood.seal.ui.page.downloadv2.configure
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.junkfood.seal.App
 import com.junkfood.seal.database.objects.CommandTemplate
 import com.junkfood.seal.download.DownloaderV2
 import com.junkfood.seal.download.Task
-import com.junkfood.seal.util.DouyinResolver
+import com.junkfood.seal.util.DouyinMedia
 import com.junkfood.seal.util.DownloadUtil
-import com.junkfood.seal.util.ToastUtil
 import com.junkfood.seal.util.isDouyinUrl
 import com.junkfood.seal.util.PlaylistResult
 import com.junkfood.seal.util.VideoInfo
@@ -41,6 +39,13 @@ class DownloadDialogViewModel(private val downloader: DownloaderV2) : ViewModel(
         data class Loading(val taskKey: String, val job: Job) : SheetState
 
         data class Error(val action: Action, val throwable: Throwable) : SheetState
+
+        /**
+         * Douyin only gives up its media to a real browser, and that browser sometimes has to be
+         * watched (a captcha can show up), so the work is handed to a page instead of the queue.
+         * The nonce keeps two identical links from looking like the same request.
+         */
+        data class DouyinCapture(val url: String, val nonce: Int = 0) : SheetState
     }
 
     sealed interface SheetValue {
@@ -88,6 +93,10 @@ class DownloadDialogViewModel(private val downloader: DownloaderV2) : ViewModel(
     private val mSheetStateFlow: MutableStateFlow<SheetState> =
         MutableStateFlow(SheetState.InputUrl)
     private val mSheetValueFlow: MutableStateFlow<SheetValue> = MutableStateFlow(SheetValue.Hidden)
+
+    private val pendingDouyinUrls = ArrayDeque<String>()
+    private var pendingDouyinPreferences: DownloadUtil.DownloadPreferences? = null
+    private var douyinNonce = 0
 
     val selectionStateFlow = mSelectionStateFlow.asStateFlow()
     val sheetStateFlow = mSheetStateFlow.asStateFlow()
@@ -193,40 +202,40 @@ class DownloadDialogViewModel(private val downloader: DownloaderV2) : ViewModel(
         }
 
         // Douyin links cannot be handed to yt-dlp: they have to be turned into direct media URLs
-        // first, which needs a real browser. Everything else was already queued above.
-        var pending = douyinUrls.size
-        var firstError: Throwable? = null
-        douyinUrls.forEach { url ->
-            DouyinResolver.resolve(App.context, url) { result ->
-                result
-                    .onSuccess { media ->
-                        media.forEach { item ->
-                            downloader.enqueue(
-                                Task(
-                                    url = item.url,
-                                    type = Task.TypeInfo.Douyin,
-                                    preferences = preferences,
-                                )
-                            )
-                        }
-                        if (media.isEmpty()) {
-                            ToastUtil.makeToast("Douyin returned no playable media")
-                        }
-                    }
-                    .onFailure { throwable ->
-                        if (firstError == null) firstError = throwable
-                    }
-                pending--
-                if (pending == 0) {
-                    val error = firstError
-                    if (error != null) {
-                        ToastUtil.makeToast(error.message ?: "Could not read this Douyin link")
-                    } else {
-                        hideDialog()
-                    }
-                }
-            }
+        // first, which needs a real browser on screen. Everything else was already queued above.
+        pendingDouyinUrls.clear()
+        pendingDouyinUrls.addAll(douyinUrls)
+        pendingDouyinPreferences = preferences
+        hideDialog()
+        advanceDouyinQueue()
+    }
+
+    private fun advanceDouyinQueue() {
+        val next = pendingDouyinUrls.firstOrNull()
+        if (next == null) {
+            pendingDouyinPreferences = null
+            mSheetStateFlow.update { SheetState.InputUrl }
+            return
         }
+        mSheetStateFlow.update { SheetState.DouyinCapture(next, ++douyinNonce) }
+    }
+
+    /** Called by the Douyin page once it read the work; the download itself is the usual queue. */
+    fun onDouyinMedia(media: List<DouyinMedia>) {
+        val preferences = pendingDouyinPreferences ?: return
+        media.forEach { item ->
+            downloader.enqueue(
+                Task(url = item.url, type = Task.TypeInfo.Douyin, preferences = preferences)
+            )
+        }
+        pendingDouyinUrls.removeFirstOrNull()
+        advanceDouyinQueue()
+    }
+
+    /** The person left the page: drop every Douyin link still waiting, the rest is already queued. */
+    fun onDouyinCancelled() {
+        pendingDouyinUrls.clear()
+        advanceDouyinQueue()
     }
 
     private fun runCommand(
