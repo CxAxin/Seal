@@ -80,6 +80,14 @@ object DownloadUtil {
 
     private const val OUTPUT_TEMPLATE_SPLIT = "$BASENAME/$OUTPUT_TEMPLATE_DEFAULT"
 
+    /**
+     * Reading a direct link, the generic extractor takes the title from the last path segment and
+     * the id from everything after the last slash, which for a signed link is the whole query
+     * string. [OUTPUT_TEMPLATE_ID] then asks for a name hundreds of characters long and the file
+     * system refuses it, so these are named after the title alone.
+     */
+    private const val OUTPUT_TEMPLATE_DIRECT_LINK = "%(title).100B$EXTENSION"
+
     private const val PLAYLIST_TITLE_SUBDIRECTORY_PREFIX = "%(playlist)s/"
 
     /**
@@ -849,6 +857,8 @@ object DownloadUtil {
                     val output =
                         if (splitByChapter) {
                             OUTPUT_TEMPLATE_SPLIT
+                        } else if (isDouyinMedia) {
+                            OUTPUT_TEMPLATE_DIRECT_LINK
                         } else if (videoClips.isEmpty()) {
                             outputTemplate
                         } else {
