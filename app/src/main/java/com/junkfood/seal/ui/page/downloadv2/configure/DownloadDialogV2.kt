@@ -108,6 +108,7 @@ import com.junkfood.seal.ui.page.downloadv2.configure.ActionButton.StartTask
 import com.junkfood.seal.ui.page.downloadv2.configure.DownloadDialogViewModel.Action
 import com.junkfood.seal.ui.page.downloadv2.configure.DownloadDialogViewModel.SelectionState
 import com.junkfood.seal.ui.page.downloadv2.configure.DownloadDialogViewModel.SheetState.Configure
+import com.junkfood.seal.ui.page.downloadv2.configure.DownloadDialogViewModel.SheetState.DouyinCapture
 import com.junkfood.seal.ui.page.downloadv2.configure.DownloadDialogViewModel.SheetState.Error
 import com.junkfood.seal.ui.page.downloadv2.configure.DownloadDialogViewModel.SheetState.InputUrl
 import com.junkfood.seal.ui.page.downloadv2.configure.DownloadDialogViewModel.SheetState.Loading
@@ -414,6 +415,12 @@ private fun DownloadDialogContent(
                     onConfigUpdate = { Config.updatePreferences(newValue = it, oldValue = config) },
                     onActionPost = onActionPost,
                 )
+            }
+
+            is DouyinCapture -> {
+                // The link is handed to a full screen page from here, so the sheet has nothing
+                // left to show while that page is on screen.
+                Column(modifier = Modifier.fillMaxWidth()) {}
             }
         }
     }
